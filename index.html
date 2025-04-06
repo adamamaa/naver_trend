@@ -39,9 +39,9 @@
             <label>시간 단위 선택:</label>
             <div id="timeUnitSelector">
                 <label><input type="radio" name="timeUnit" value="date" checked> 일간</label>
-                <label><input type="radio" name="timeUnit" value="week"> 주간</label> <label><input type="radio" name="timeUnit" value="month"> 월간</label>
-                <label><input type="radio" name="timeUnit" value="year"> 연간</label>
-            </div>
+                <label><input type="radio" name="timeUnit" value="week"> 주간</label>
+                <label><input type="radio" name="timeUnit" value="month"> 월간</label>
+                </div>
         </div>
 
         <div class="input-group date-inputs">
@@ -89,11 +89,11 @@
         const chartContainer = document.getElementById('chartContainer');
         const trendChartCanvas = document.getElementById('trendChart');
         const timeUnitSelector = document.getElementById('timeUnitSelector');
-        const startDateInput = document.getElementById('startDate'); // 시작일 입력 참조
-        const endDateInput = document.getElementById('endDate');   // 종료일 입력 참조
-        let trendChart = null; // Chart.js 인스턴스
+        const startDateInput = document.getElementById('startDate');
+        const endDateInput = document.getElementById('endDate');
+        let trendChart = null;
 
-        const backendApiUrl = '/api/analyze-trends'; // 백엔드 API 엔드포인트
+        const backendApiUrl = '/api/analyze-trends';
 
         // 날짜 포맷 함수 (yyyy-mm-dd)
         const formatDate = (date) => {
@@ -107,13 +107,12 @@
         const setDefaultDates = () => {
             const today = new Date();
             const oneYearAgo = new Date();
-            oneYearAgo.setFullYear(today.getFullYear() - 1); // 1년 전 날짜 계산
-
-            startDateInput.value = formatDate(oneYearAgo); // 기본 시작일 설정
-            endDateInput.value = formatDate(today);       // 기본 종료일 설정
+            oneYearAgo.setFullYear(today.getFullYear() - 1);
+            startDateInput.value = formatDate(oneYearAgo);
+            endDateInput.value = formatDate(today);
         };
 
-        // 페이지가 로드되면 기본 날짜 설정 함수 실행
+        // 페이지 로드 시 기본 날짜 설정
         document.addEventListener('DOMContentLoaded', setDefaultDates);
 
         // '분석 시작' 버튼 클릭 이벤트 리스너
@@ -122,49 +121,31 @@
             const startDate = startDateInput.value;
             const endDate = endDateInput.value;
 
-            // --- 입력값 유효성 검사 시작 ---
-            if (!keywords) {
-                showError("분석할 키워드를 입력해주세요.");
-                return;
-            }
+            // 입력값 유효성 검사
+            if (!keywords) { showError("분석할 키워드를 입력해주세요."); return; }
             const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
-            if (keywordList.length === 0) {
-                showError("유효한 키워드를 입력해주세요.");
-                return;
-            }
-            if (!startDate || !endDate) {
-                showError("시작일과 종료일을 모두 선택해주세요.");
-                return;
-            }
-            if (new Date(startDate) > new Date(endDate)) {
-                showError("시작일은 종료일보다 이전이어야 합니다.");
-                return;
-            }
-            if (new Date(startDate) < new Date("2016-01-01")) {
-                 showError("시작일은 2016년 1월 1일 이후여야 합니다.");
-                 return;
-             }
-            // --- 입력값 유효성 검사 끝 ---
+            if (keywordList.length === 0) { showError("유효한 키워드를 입력해주세요."); return; }
+            if (!startDate || !endDate) { showError("시작일과 종료일을 모두 선택해주세요."); return; }
+            if (new Date(startDate) > new Date(endDate)) { showError("시작일은 종료일보다 이전이어야 합니다."); return; }
+            if (new Date(startDate) < new Date("2016-01-01")) { showError("시작일은 2016년 1월 1일 이후여야 합니다."); return; }
 
             // 선택된 시간 단위 값 가져오기
             const selectedTimeUnitInput = timeUnitSelector.querySelector('input[name="timeUnit"]:checked');
             const timeUnit = selectedTimeUnitInput ? selectedTimeUnitInput.value : 'date'; // 기본값 'date'
 
-            // --- UI 초기화 ---
+            // UI 초기화
             resultText.style.display = 'none';
             chartContainer.style.display = 'none';
-            if (trendChart) { trendChart.destroy(); } // 이전 차트 제거
+            if (trendChart) { trendChart.destroy(); }
             errorMessageDiv.style.display = 'none';
-            loadingIndicator.style.display = 'block'; // 로딩 시작
-            analyzeButton.disabled = true; // 버튼 비활성화
-            // --- UI 초기화 끝 ---
+            loadingIndicator.style.display = 'block';
+            analyzeButton.disabled = true;
 
             try {
-                // --- 백엔드 API 호출 ---
+                // 백엔드 API 호출
                 const response = await fetch(backendApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // 요청 본문에 키워드, 시간단위, 시작일, 종료일 포함
                     body: JSON.stringify({
                         keywords: keywordList,
                         timeUnit: timeUnit,
@@ -172,108 +153,62 @@
                         endDate: endDate
                     })
                 });
+                const responseData = await response.json();
+                if (!response.ok) { throw new Error(responseData.error || `서버 오류 발생: ${response.status}`); }
 
-                const responseData = await response.json(); // 응답 데이터 파싱
-
-                // 백엔드 응답 상태 확인
-                if (!response.ok) {
-                    // 백엔드에서 전달된 오류 메시지 사용
-                    throw new Error(responseData.error || `서버 오류 발생: ${response.status}`);
-                }
-                // --- 백엔드 API 호출 끝 ---
-
-                // --- 결과 처리 ---
-                // 백엔드 데이터를 Chart.js 형식으로 변환
+                // 결과 처리
                 const chartData = convertNaverDataToChartData(responseData);
-
-                // 변환된 데이터로 결과 표시 또는 오류 메시지 표시
                 if (!chartData || chartData.labels.length === 0) {
                     showError("분석 결과를 가져왔으나 표시할 데이터가 없습니다. 기간이나 키워드를 확인해주세요.");
                 } else {
-                    displayResults(chartData); // 차트 표시
+                    displayResults(chartData);
                 }
-                // --- 결과 처리 끝 ---
-
             } catch (error) {
-                // 오류 처리
                 console.error("분석 요청 중 오류 발생:", error);
                 showError(`분석 요청 실패: ${error.message}`);
             } finally {
-                // --- 분석 완료 후 처리 ---
-                loadingIndicator.style.display = 'none'; // 로딩 숨김
-                analyzeButton.disabled = false; // 버튼 활성화
-                // --- 분석 완료 후 처리 끝 ---
+                loadingIndicator.style.display = 'none';
+                analyzeButton.disabled = false;
             }
         });
 
-        /**
-         * 백엔드 응답 데이터를 Chart.js 데이터 형식으로 변환
-         * @param {object} naverData - 백엔드로부터 받은 네이버 API 응답 데이터
-         * @returns {object|null} Chart.js 데이터 객체 또는 null
-         */
+        // 데이터 변환 함수 (변경 없음)
         function convertNaverDataToChartData(naverData) {
              if (!naverData || !naverData.results || naverData.results.length === 0 || !naverData.results[0].data || naverData.results[0].data.length === 0) {
-                console.warn("Received empty or invalid data from backend:", naverData);
-                return null;
+                console.warn("Received empty or invalid data from backend:", naverData); return null;
             }
             try {
-                const labels = naverData.results[0].data.map(d => d.period); // 기간 레이블
-                const datasets = naverData.results.map((resultGroup, index) => { // 키워드별 데이터셋
+                const labels = naverData.results[0].data.map(d => d.period);
+                const datasets = naverData.results.map((resultGroup, index) => {
                     const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#6b7280'];
-                    return {
-                        label: resultGroup.title, // 키워드
-                        data: resultGroup.data.map(d => d.ratio), // 관심도 데이터
-                        borderColor: colors[index % colors.length],
-                        tension: 0.1,
-                        fill: false
-                    };
+                    return { label: resultGroup.title, data: resultGroup.data.map(d => d.ratio), borderColor: colors[index % colors.length], tension: 0.1, fill: false };
                 });
                 return { labels: labels, datasets: datasets };
             } catch (e) {
                 console.error("Error converting backend data to chart format:", e, naverData);
-                showError("백엔드 응답 데이터를 차트 형식으로 변환 중 오류가 발생했습니다.");
-                return null;
+                showError("백엔드 응답 데이터를 차트 형식으로 변환 중 오류가 발생했습니다."); return null;
             }
         }
 
-        /**
-         * 차트를 화면에 표시
-         * @param {object} data - Chart.js 데이터 객체
-         */
+        // 차트 표시 함수 (변경 없음)
         function displayResults(data) {
             resultsDiv.style.display = 'block';
-            chartContainer.style.display = 'block'; // 차트 컨테이너 표시
+            chartContainer.style.display = 'block';
             resultText.style.display = 'none';
             const ctx = trendChartCanvas.getContext('2d');
-            if (trendChart) { trendChart.destroy(); } // 이전 차트 제거
-            trendChart = new Chart(ctx, { // 새 차트 생성
-                type: 'line',
-                data: data,
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top' },
-                        title: { display: true, text: '키워드별 트렌드 변화' }
-                    },
-                    scales: {
-                        y: { beginAtZero: true, title: { display: true, text: '상대적 관심도 (0-100)' } },
-                        x: { title: { display: true, text: '기간' } }
-                    }
-                }
+            if (trendChart) { trendChart.destroy(); }
+            trendChart = new Chart(ctx, {
+                type: 'line', data: data, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: true, text: '키워드별 트렌드 변화' } }, scales: { y: { beginAtZero: true, title: { display: true, text: '상대적 관심도 (0-100)' } }, x: { title: { display: true, text: '기간' } } } }
             });
         }
 
-        /**
-         * 오류 메시지를 화면에 표시
-         * @param {string} message - 표시할 오류 메시지
-         */
+        // 오류 메시지 표시 함수 (변경 없음)
         function showError(message) {
             errorMessageDiv.textContent = message;
-            errorMessageDiv.style.display = 'block'; // 오류 메시지 표시
+            errorMessageDiv.style.display = 'block';
             loadingIndicator.style.display = 'none';
             analyzeButton.disabled = false;
-            chartContainer.style.display = 'none'; // 차트 숨김
+            chartContainer.style.display = 'none';
             if (trendChart) { trendChart.destroy(); }
             resultsDiv.style.display = 'block';
             resultText.textContent = '';
