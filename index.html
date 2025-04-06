@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>네이버 트렌드 분석</title>
+    <title>네이버 트렌드 분석 (직접 호출)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* 기본 폰트 설정 (선택 사항) */
@@ -30,7 +30,7 @@
 <body class="bg-gray-100 p-6 md:p-10 font-['Inter']">
 
     <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
-        <h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-blue-600">네이버 트렌드 분석</h1>
+        <h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-blue-600">네이버 트렌드 분석 (직접 호출)</h1>
 
         <div class="mb-6">
             <label for="keywords" class="block text-sm font-medium text-gray-700 mb-2">분석할 키워드를 입력하세요 (쉼표로 구분):</label>
@@ -68,15 +68,30 @@
         const trendChartCanvas = document.getElementById('trendChart');
         let trendChart = null; // 차트 인스턴스 저장 변수
 
-        analyzeButton.addEventListener('click', () => {
+        // ---!!! 보안 경고 !!!---
+        // 아래 API 키들은 클라이언트 측 코드에 직접 노출되어 있습니다.
+        // 이는 심각한 보안 위험을 초래할 수 있으며, 절대 권장되지 않는 방식입니다.
+        // 실제 서비스에서는 반드시 백엔드 서버를 통해 API를 호출하고 키를 안전하게 관리해야 합니다.
+        const clientId = 'Hue5sTXgSLbEGxHK1qJO';
+        const clientSecret = 'Fo5QG0nbDy';
+        // ---!!! 보안 경고 끝 ---
+
+        const naverApiUrl = 'https://openapi.naver.com/v1/datalab/search';
+
+        analyzeButton.addEventListener('click', async () => { // async 추가
             const keywords = keywordsInput.value.trim();
             if (!keywords) {
                 showError("분석할 키워드를 입력해주세요.");
                 return;
             }
 
+            const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k); // 빈 문자열 제거
+            if (keywordList.length === 0) {
+                showError("유효한 키워드를 입력해주세요.");
+                return;
+            }
+
             // 이전 결과 및 오류 메시지 초기화
-            resultText.textContent = '';
             resultText.style.display = 'none'; // 기본 텍스트 숨김
             if (trendChart) {
                 trendChart.destroy(); // 이전 차트 제거
@@ -86,73 +101,136 @@
             loadingIndicator.style.display = 'block'; // 로딩 시작
             analyzeButton.disabled = true; // 버튼 비활성화
 
-            // --- 실제 API 호출 로직 대신 시뮬레이션 ---
-            // 실제 구현 시:
-            // 1. 입력된 keywords를 서버로 전송합니다.
-            // 2. 서버에서는 네이버 API를 호출하여 데이터를 받아옵니다.
-            // 3. 서버는 가공된 데이터를 클라이언트(현재 페이지)로 응답합니다.
-            // 4. 클라이언트는 받은 데이터로 아래 displayResults 함수를 호출합니다.
-            console.log(`서버로 전송할 키워드: ${keywords}`);
+            // 네이버 데이터랩 API 요청 본문 구성
+            // 참고: 실제 필요에 맞게 startDate, endDate, timeUnit 등을 조정해야 합니다.
+            const today = new Date();
+            const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
 
-            // 가상 API 호출 지연 (2초)
-            setTimeout(() => {
-                try {
-                    // 가상 데이터 생성 (실제로는 서버 응답 사용)
-                    const mockData = generateMockData(keywords.split(',').map(k => k.trim()));
+            const formatDate = (date) => {
+                const yyyy = date.getFullYear();
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const dd = String(date.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            };
 
-                    displayResults(mockData);
-                    loadingIndicator.style.display = 'none'; // 로딩 완료
-                    analyzeButton.disabled = false; // 버튼 활성화
+            const requestBody = {
+                startDate: formatDate(oneYearAgo), // 예: 1년 전
+                endDate: formatDate(today),       // 예: 오늘
+                timeUnit: "month",                // 예: 월간 단위
+                keywordGroups: keywordList.map(kw => ({
+                    groupName: kw,
+                    keywords: [kw] // 각 키워드를 그룹으로 설정
+                }))
+                // device: "pc", // 필요시 기기 설정 (pc, mo)
+                // gender: "f", // 필요시 성별 설정 (f, m)
+                // ages: ["20", "30"] // 필요시 연령대 설정
+            };
 
-                } catch (error) {
-                    console.error("분석 중 오류 발생:", error);
-                    showError("데이터 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
-                    loadingIndicator.style.display = 'none'; // 로딩 완료 (오류)
-                    analyzeButton.disabled = false; // 버튼 활성화
+            try {
+                // 직접 네이버 API 호출 (CORS 문제 발생 가능성 높음)
+                const response = await fetch(naverApiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-Naver-Client-Id': clientId,       // 클라이언트 ID 헤더
+                        'X-Naver-Client-Secret': clientSecret, // 클라이언트 시크릿 헤더
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                // 응답 상태 확인
+                if (!response.ok) {
+                    // 네이버 API 오류 메시지 파싱 시도
+                    let errorData;
+                    try {
+                        errorData = await response.json();
+                    } catch (e) {
+                        // JSON 파싱 실패 시 기본 오류 메시지
+                        throw new Error(`네이버 API 오류: ${response.status} ${response.statusText}`);
+                    }
+                    // 네이버에서 제공하는 오류 메시지가 있다면 표시
+                    throw new Error(`네이버 API 오류: ${errorData.errorMessage || response.statusText} (코드: ${errorData.errorCode || response.status})`);
                 }
-            }, 2000);
-            // --- 시뮬레이션 종료 ---
+
+                const dataFromNaver = await response.json();
+
+                // 네이버 API 응답을 Chart.js 형식으로 변환
+                const chartData = convertNaverDataToChartData(dataFromNaver);
+
+                if (!chartData || chartData.labels.length === 0) {
+                     showError("분석 결과를 가져왔으나 표시할 데이터가 없습니다. 기간이나 키워드를 확인해주세요.");
+                } else {
+                    displayResults(chartData); // 변환된 데이터로 차트 표시
+                }
+
+            } catch (error) {
+                console.error("분석 중 오류 발생:", error);
+                // CORS 오류는 브라우저 콘솔에 더 자세히 나타날 수 있습니다.
+                if (error.message.includes('Failed to fetch')) {
+                     showError("네이버 API 호출에 실패했습니다. CORS 정책 또는 네트워크 연결을 확인해주세요.");
+                } else {
+                    showError(`분석 중 오류 발생: ${error.message}`);
+                }
+            } finally {
+                loadingIndicator.style.display = 'none'; // 로딩 완료
+                analyzeButton.disabled = false; // 버튼 활성화
+            }
         });
 
-        // 가상 데이터 생성 함수 (실제로는 서버 응답 사용)
-        function generateMockData(keywordList) {
-            const labels = ['2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06']; // 예시 기간
-            const datasets = keywordList.map((keyword, index) => {
-                const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6']; // 예시 색상
-                return {
-                    label: keyword,
-                    data: labels.map(() => Math.floor(Math.random() * 100)), // 0~99 랜덤 데이터
-                    borderColor: colors[index % colors.length],
-                    tension: 0.1,
-                    fill: false
-                };
-            });
+        // 네이버 API 응답을 Chart.js 형식으로 변환하는 함수
+        function convertNaverDataToChartData(naverData) {
+            if (!naverData || !naverData.results || naverData.results.length === 0) {
+                console.warn("Received empty or invalid data from Naver API:", naverData);
+                return null; // 데이터 없으면 null 반환
+            }
 
-            return {
-                labels: labels,
-                datasets: datasets
-            };
+            try {
+                const labels = naverData.results[0].data.map(d => d.period); // 첫 번째 키워드 그룹의 기간 사용
+                const datasets = naverData.results.map((resultGroup, index) => {
+                    const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#6b7280']; // 색상 추가
+                    return {
+                        label: resultGroup.title, // 키워드 그룹 이름 (입력한 키워드)
+                        data: resultGroup.data.map(d => d.ratio), // 해당 기간의 상대적 비율
+                        borderColor: colors[index % colors.length],
+                        tension: 0.1,
+                        fill: false
+                    };
+                });
+
+                return {
+                    labels: labels,
+                    datasets: datasets
+                };
+            } catch (e) {
+                console.error("Error converting Naver data to chart format:", e, naverData);
+                showError("네이버 API 응답 데이터를 차트 형식으로 변환하는 중 오류가 발생했습니다.");
+                return null;
+            }
         }
 
-        // 결과 표시 함수
+        // 결과 표시 함수 (차트 생성)
         function displayResults(data) {
             resultsDiv.style.display = 'block'; // 결과 영역 표시
             trendChartCanvas.style.display = 'block'; // 차트 캔버스 표시
+            resultText.style.display = 'none'; // 기본 안내 텍스트 숨김
 
-            // Chart.js를 사용하여 라인 차트 생성
             const ctx = trendChartCanvas.getContext('2d');
+            if (trendChart) {
+                trendChart.destroy(); // 기존 차트가 있으면 파괴
+            }
             trendChart = new Chart(ctx, {
                 type: 'line',
                 data: data,
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false, // 비율 유지 해제 (높이 조절 용이)
                     plugins: {
                         legend: {
                             position: 'top',
                         },
                         title: {
                             display: true,
-                            text: '키워드별 트렌드 변화 (가상 데이터)'
+                            text: '키워드별 트렌드 변화'
                         }
                     },
                     scales: {
@@ -160,8 +238,14 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: '상대적 관심도'
+                                text: '상대적 관심도 (0-100)'
                             }
+                        },
+                        x: {
+                             title: {
+                                 display: true,
+                                 text: '기간'
+                             }
                         }
                     }
                 }
@@ -174,6 +258,14 @@
             errorMessageDiv.style.display = 'block';
             loadingIndicator.style.display = 'none'; // 오류 시 로딩 숨김
             analyzeButton.disabled = false; // 오류 시 버튼 활성화
+            // 오류 발생 시 차트 숨김
+            if (trendChart) {
+                trendChart.destroy();
+                trendChartCanvas.style.display = 'none';
+            }
+             resultsDiv.style.display = 'block'; // 결과 영역은 보이게 유지 (오류 메시지 위함)
+             resultText.textContent = ''; // 결과 영역 내 기본 텍스트 제거
+             resultText.style.display = 'none';
         }
     </script>
 
