@@ -3,32 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>네이버 트렌드 분석</title>
+    <title>네이버 트렌드 분석 (백엔드 연동)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 기본 폰트 설정 (선택 사항) */
-        body {
-            font-family: 'Inter', sans-serif; /* Inter 폰트 또는 시스템 기본 폰트 사용 */
-        }
+        /* 기본 폰트 설정 */
+        body { font-family: 'Inter', sans-serif; }
         /* 로딩 스피너 스타일 */
-        .loader {
-            border: 4px solid #f3f3f3; /* Light grey */
-            border-top: 4px solid #3498db; /* Blue */
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto; /* 가운데 정렬 */
-            display: none; /* 기본적으로 숨김 */
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        /* 차트 컨테이너 기본 숨김 (JS로 제어) */
-        #chartContainer {
-            display: none;
-        }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 0 auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* 차트 컨테이너 기본 숨김 */
+        #chartContainer { display: none; }
+        /* 입력 그룹 스타일 */
+        .input-group { margin-bottom: 1rem; }
+        .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151; }
+        .input-group input[type="text"], .input-group input[type="date"] { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        /* 라디오 버튼 그룹 스타일 */
+        .radio-group label { margin-right: 1rem; display: inline-flex; align-items: center; }
+        .radio-group input { margin-right: 0.25rem; }
+        /* 날짜 입력 필드 가로 정렬 */
+        .date-inputs { display: flex; gap: 1rem; }
+        .date-inputs > div { flex: 1; }
     </style>
 </head>
 <body class="bg-gray-100 p-6 md:p-10 font-['Inter']">
@@ -36,12 +30,32 @@
     <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
         <h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-blue-600">네이버 트렌드 분석</h1>
 
-        <div class="mb-6">
-            <label for="keywords" class="block text-sm font-medium text-gray-700 mb-2">분석할 키워드를 입력하세요 (쉼표로 구분):</label>
-            <input type="text" id="keywords" name="keywords" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="예: 인공지능, 빅데이터, 클라우드">
+        <div class="input-group">
+            <label for="keywords">분석할 키워드를 입력하세요 (쉼표로 구분):</label>
+            <input type="text" id="keywords" name="keywords" placeholder="예: 인공지능, 빅데이터, 클라우드">
         </div>
 
-        <div class="text-center mb-6">
+        <div class="input-group radio-group">
+            <label>시간 단위 선택:</label>
+            <div id="timeUnitSelector">
+                <label><input type="radio" name="timeUnit" value="date" checked> 일간</label>
+                <label><input type="radio" name="timeUnit" value="week"> 주간</label> <label><input type="radio" name="timeUnit" value="month"> 월간</label>
+                <label><input type="radio" name="timeUnit" value="year"> 연간</label>
+            </div>
+        </div>
+
+        <div class="input-group date-inputs">
+            <div>
+                <label for="startDate">시작일:</label>
+                <input type="date" id="startDate" name="startDate">
+            </div>
+            <div>
+                <label for="endDate">종료일:</label>
+                <input type="date" id="endDate" name="endDate">
+            </div>
+        </div>
+
+        <div class="text-center my-6">
             <button id="analyzeButton" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-md transition duration-150 ease-in-out">
                 분석 시작
             </button>
@@ -52,9 +66,9 @@
         <div id="results" class="mt-6 p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">
             <h2 class="text-xl font-semibold mb-3 text-gray-800">분석 결과</h2>
             <p id="resultText" class="text-gray-600">분석할 키워드를 입력하고 '분석 시작' 버튼을 눌러주세요.</p>
-
             <div id="chartContainer" class="relative h-96 mt-4">
-                <canvas id="trendChart"></canvas> </div>
+                <canvas id="trendChart"></canvas>
+            </div>
         </div>
 
         <div id="errorMessage" class="mt-4 p-3 bg-red-100 text-red-700 rounded-md border border-red-300 text-sm" style="display: none;">
@@ -74,181 +88,195 @@
         const errorMessageDiv = document.getElementById('errorMessage');
         const chartContainer = document.getElementById('chartContainer');
         const trendChartCanvas = document.getElementById('trendChart');
-        let trendChart = null; // Chart.js 인스턴스 저장 변수
+        const timeUnitSelector = document.getElementById('timeUnitSelector');
+        const startDateInput = document.getElementById('startDate'); // 시작일 입력 참조
+        const endDateInput = document.getElementById('endDate');   // 종료일 입력 참조
+        let trendChart = null; // Chart.js 인스턴스
 
-        // 백엔드 API 엔드포인트 URL (Vercel Serverless Function 경로)
-        const backendApiUrl = '/api/analyze-trends';
+        const backendApiUrl = '/api/analyze-trends'; // 백엔드 API 엔드포인트
+
+        // 날짜 포맷 함수 (yyyy-mm-dd)
+        const formatDate = (date) => {
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        };
+
+        // 페이지 로드 시 날짜 기본값 설정 함수
+        const setDefaultDates = () => {
+            const today = new Date();
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(today.getFullYear() - 1); // 1년 전 날짜 계산
+
+            startDateInput.value = formatDate(oneYearAgo); // 기본 시작일 설정
+            endDateInput.value = formatDate(today);       // 기본 종료일 설정
+        };
+
+        // 페이지가 로드되면 기본 날짜 설정 함수 실행
+        document.addEventListener('DOMContentLoaded', setDefaultDates);
 
         // '분석 시작' 버튼 클릭 이벤트 리스너
         analyzeButton.addEventListener('click', async () => {
             const keywords = keywordsInput.value.trim();
-            // 입력값 유효성 검사
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+
+            // --- 입력값 유효성 검사 시작 ---
             if (!keywords) {
                 showError("분석할 키워드를 입력해주세요.");
                 return;
             }
-
-            // 쉼표로 구분된 키워드를 배열로 변환하고 빈 항목 제거
             const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
             if (keywordList.length === 0) {
                 showError("유효한 키워드를 입력해주세요.");
                 return;
             }
-
-            // 분석 시작 전 UI 초기화
-            resultText.style.display = 'none'; // 기본 안내 텍스트 숨김
-            chartContainer.style.display = 'none'; // 차트 컨테이너 숨김
-            if (trendChart) {
-                trendChart.destroy(); // 이전 차트 인스턴스 제거
+            if (!startDate || !endDate) {
+                showError("시작일과 종료일을 모두 선택해주세요.");
+                return;
             }
-            errorMessageDiv.style.display = 'none'; // 오류 메시지 숨김
-            loadingIndicator.style.display = 'block'; // 로딩 스피너 표시
-            analyzeButton.disabled = true; // 분석 중 버튼 비활성화
+            if (new Date(startDate) > new Date(endDate)) {
+                showError("시작일은 종료일보다 이전이어야 합니다.");
+                return;
+            }
+            if (new Date(startDate) < new Date("2016-01-01")) {
+                 showError("시작일은 2016년 1월 1일 이후여야 합니다.");
+                 return;
+             }
+            // --- 입력값 유효성 검사 끝 ---
+
+            // 선택된 시간 단위 값 가져오기
+            const selectedTimeUnitInput = timeUnitSelector.querySelector('input[name="timeUnit"]:checked');
+            const timeUnit = selectedTimeUnitInput ? selectedTimeUnitInput.value : 'date'; // 기본값 'date'
+
+            // --- UI 초기화 ---
+            resultText.style.display = 'none';
+            chartContainer.style.display = 'none';
+            if (trendChart) { trendChart.destroy(); } // 이전 차트 제거
+            errorMessageDiv.style.display = 'none';
+            loadingIndicator.style.display = 'block'; // 로딩 시작
+            analyzeButton.disabled = true; // 버튼 비활성화
+            // --- UI 초기화 끝 ---
 
             try {
-                // 백엔드 API 호출 (POST 요청)
+                // --- 백엔드 API 호출 ---
                 const response = await fetch(backendApiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    // 키워드 목록을 JSON 형태로 요청 본문에 담아 전송
-                    body: JSON.stringify({ keywords: keywordList })
+                    headers: { 'Content-Type': 'application/json' },
+                    // 요청 본문에 키워드, 시간단위, 시작일, 종료일 포함
+                    body: JSON.stringify({
+                        keywords: keywordList,
+                        timeUnit: timeUnit,
+                        startDate: startDate,
+                        endDate: endDate
+                    })
                 });
 
-                // 백엔드 응답 데이터 파싱
-                const responseData = await response.json();
+                const responseData = await response.json(); // 응답 데이터 파싱
 
-                // 백엔드 응답 상태 코드 확인 (오류 처리)
+                // 백엔드 응답 상태 확인
                 if (!response.ok) {
-                    // 백엔드에서 보낸 오류 메시지가 있으면 사용, 없으면 기본 메시지
+                    // 백엔드에서 전달된 오류 메시지 사용
                     throw new Error(responseData.error || `서버 오류 발생: ${response.status}`);
                 }
+                // --- 백엔드 API 호출 끝 ---
 
-                // 백엔드로부터 받은 데이터를 Chart.js 형식으로 변환
+                // --- 결과 처리 ---
+                // 백엔드 데이터를 Chart.js 형식으로 변환
                 const chartData = convertNaverDataToChartData(responseData);
 
-                // 변환된 데이터 유효성 검사 및 결과 표시
+                // 변환된 데이터로 결과 표시 또는 오류 메시지 표시
                 if (!chartData || chartData.labels.length === 0) {
-                     showError("분석 결과를 가져왔으나 표시할 데이터가 없습니다. 기간이나 키워드를 확인해주세요.");
+                    showError("분석 결과를 가져왔으나 표시할 데이터가 없습니다. 기간이나 키워드를 확인해주세요.");
                 } else {
-                    displayResults(chartData); // 차트 표시 함수 호출
+                    displayResults(chartData); // 차트 표시
                 }
+                // --- 결과 처리 끝 ---
 
             } catch (error) {
-                // 네트워크 오류 또는 백엔드/API 오류 처리
+                // 오류 처리
                 console.error("분석 요청 중 오류 발생:", error);
                 showError(`분석 요청 실패: ${error.message}`);
             } finally {
-                // 분석 완료 후 UI 정리
-                loadingIndicator.style.display = 'none'; // 로딩 스피너 숨김
+                // --- 분석 완료 후 처리 ---
+                loadingIndicator.style.display = 'none'; // 로딩 숨김
                 analyzeButton.disabled = false; // 버튼 활성화
+                // --- 분석 완료 후 처리 끝 ---
             }
         });
 
         /**
-         * 네이버 API 응답 데이터를 Chart.js 데이터 형식으로 변환하는 함수
+         * 백엔드 응답 데이터를 Chart.js 데이터 형식으로 변환
          * @param {object} naverData - 백엔드로부터 받은 네이버 API 응답 데이터
-         * @returns {object|null} Chart.js 데이터 객체 또는 null (오류/데이터 없음)
+         * @returns {object|null} Chart.js 데이터 객체 또는 null
          */
         function convertNaverDataToChartData(naverData) {
-             // 데이터 유효성 검사
              if (!naverData || !naverData.results || naverData.results.length === 0 || !naverData.results[0].data || naverData.results[0].data.length === 0) {
                 console.warn("Received empty or invalid data from backend:", naverData);
-                return null; // 유효하지 않으면 null 반환
+                return null;
             }
-
             try {
-                // X축 레이블 (기간) 추출 (첫 번째 키워드 그룹 기준)
-                const labels = naverData.results[0].data.map(d => d.period);
-                // 각 키워드 그룹별 데이터셋 생성
-                const datasets = naverData.results.map((resultGroup, index) => {
-                    // 사용할 색상 배열
+                const labels = naverData.results[0].data.map(d => d.period); // 기간 레이블
+                const datasets = naverData.results.map((resultGroup, index) => { // 키워드별 데이터셋
                     const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#6b7280'];
                     return {
-                        label: resultGroup.title, // 범례 레이블 (키워드)
-                        data: resultGroup.data.map(d => d.ratio), // Y축 데이터 (상대적 관심도)
-                        borderColor: colors[index % colors.length], // 선 색상
-                        tension: 0.1, // 선의 곡률 (0이면 직선)
-                        fill: false // 선 아래 영역 채우지 않음
+                        label: resultGroup.title, // 키워드
+                        data: resultGroup.data.map(d => d.ratio), // 관심도 데이터
+                        borderColor: colors[index % colors.length],
+                        tension: 0.1,
+                        fill: false
                     };
                 });
-                // Chart.js가 요구하는 형식으로 반환
                 return { labels: labels, datasets: datasets };
             } catch (e) {
-                // 데이터 변환 중 오류 발생 시 처리
                 console.error("Error converting backend data to chart format:", e, naverData);
                 showError("백엔드 응답 데이터를 차트 형식으로 변환 중 오류가 발생했습니다.");
-                return null; // 오류 시 null 반환
+                return null;
             }
         }
 
         /**
-         * 차트를 화면에 표시하는 함수
+         * 차트를 화면에 표시
          * @param {object} data - Chart.js 데이터 객체
          */
         function displayResults(data) {
-            resultsDiv.style.display = 'block'; // 결과 영역 표시
+            resultsDiv.style.display = 'block';
             chartContainer.style.display = 'block'; // 차트 컨테이너 표시
-            resultText.style.display = 'none'; // 기본 안내 텍스트 숨김
-
-            // 캔버스 컨텍스트 가져오기
+            resultText.style.display = 'none';
             const ctx = trendChartCanvas.getContext('2d');
-            // 기존 차트 인스턴스가 있으면 파괴 (중복 생성 방지)
-            if (trendChart) {
-                trendChart.destroy();
-            }
-            // 새 차트 생성
-            trendChart = new Chart(ctx, {
-                type: 'line', // 라인 차트
-                data: data,   // 차트 데이터
+            if (trendChart) { trendChart.destroy(); } // 이전 차트 제거
+            trendChart = new Chart(ctx, { // 새 차트 생성
+                type: 'line',
+                data: data,
                 options: {
-                    responsive: true, // 반응형 활성화
-                    maintainAspectRatio: false, // 중요: 컨테이너 크기에 맞추려면 false 유지
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
-                        legend: { // 범례 설정
-                            position: 'top', // 범례 위치 (위쪽)
-                        },
-                        title: { // 차트 제목 설정
-                            display: true,
-                            text: '키워드별 트렌드 변화'
-                        }
+                        legend: { position: 'top' },
+                        title: { display: true, text: '키워드별 트렌드 변화' }
                     },
-                    scales: { // 축 설정
-                        y: { // Y축
-                            beginAtZero: true, // 0부터 시작
-                            title: { // Y축 제목
-                                display: true,
-                                text: '상대적 관심도 (0-100)'
-                            }
-                        },
-                        x: { // X축
-                            title: { // X축 제목
-                                display: true,
-                                text: '기간'
-                            }
-                        }
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: '상대적 관심도 (0-100)' } },
+                        x: { title: { display: true, text: '기간' } }
                     }
                 }
             });
         }
 
         /**
-         * 오류 메시지를 화면에 표시하는 함수
+         * 오류 메시지를 화면에 표시
          * @param {string} message - 표시할 오류 메시지
          */
         function showError(message) {
-            errorMessageDiv.textContent = message; // 오류 메시지 설정
+            errorMessageDiv.textContent = message;
             errorMessageDiv.style.display = 'block'; // 오류 메시지 표시
-            loadingIndicator.style.display = 'none'; // 로딩 스피너 숨김
-            analyzeButton.disabled = false; // 버튼 활성화
-            // 오류 발생 시 차트 컨테이너 숨김
-            chartContainer.style.display = 'none';
-            if (trendChart) {
-                trendChart.destroy(); // 차트 인스턴스 제거
-            }
-            resultsDiv.style.display = 'block'; // 결과 영역은 보이게 유지 (오류 메시지 위함)
-            resultText.textContent = ''; // 결과 영역 내 기본 텍스트 제거
+            loadingIndicator.style.display = 'none';
+            analyzeButton.disabled = false;
+            chartContainer.style.display = 'none'; // 차트 숨김
+            if (trendChart) { trendChart.destroy(); }
+            resultsDiv.style.display = 'block';
+            resultText.textContent = '';
             resultText.style.display = 'none';
         }
     </script>
