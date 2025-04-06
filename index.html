@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>네이버 트렌드 분석</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 기본 폰트 설정 (선택 사항) */
+        body {
+            font-family: 'Inter', sans-serif; /* Inter 폰트 또는 시스템 기본 폰트 사용 */
+        }
+        /* 로딩 스피너 스타일 */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto; /* 가운데 정렬 */
+            display: none; /* 기본적으로 숨김 */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-6 md:p-10 font-['Inter']">
+
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-blue-600">네이버 트렌드 분석</h1>
+
+        <div class="mb-6">
+            <label for="keywords" class="block text-sm font-medium text-gray-700 mb-2">분석할 키워드를 입력하세요 (쉼표로 구분):</label>
+            <input type="text" id="keywords" name="keywords" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="예: 인공지능, 빅데이터, 클라우드">
+        </div>
+
+        <div class="text-center mb-6">
+            <button id="analyzeButton" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-md transition duration-150 ease-in-out">
+                분석 시작
+            </button>
+        </div>
+
+        <div id="loadingIndicator" class="loader mb-4"></div>
+
+        <div id="results" class="mt-6 p-4 bg-gray-50 rounded-md border border-gray-200 min-h-[100px]">
+            <h2 class="text-xl font-semibold mb-3 text-gray-800">분석 결과</h2>
+            <p id="resultText" class="text-gray-600">분석할 키워드를 입력하고 '분석 시작' 버튼을 눌러주세요.</p>
+            <canvas id="trendChart" class="mt-4" style="display: none;"></canvas>
+        </div>
+
+        <div id="errorMessage" class="mt-4 p-3 bg-red-100 text-red-700 rounded-md border border-red-300 text-sm" style="display: none;">
+            오류 메시지가 여기에 표시됩니다.
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        const keywordsInput = document.getElementById('keywords');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const resultsDiv = document.getElementById('results');
+        const resultText = document.getElementById('resultText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorMessageDiv = document.getElementById('errorMessage');
+        const trendChartCanvas = document.getElementById('trendChart');
+        let trendChart = null; // 차트 인스턴스 저장 변수
+
+        analyzeButton.addEventListener('click', () => {
+            const keywords = keywordsInput.value.trim();
+            if (!keywords) {
+                showError("분석할 키워드를 입력해주세요.");
+                return;
+            }
+
+            // 이전 결과 및 오류 메시지 초기화
+            resultText.textContent = '';
+            resultText.style.display = 'none'; // 기본 텍스트 숨김
+            if (trendChart) {
+                trendChart.destroy(); // 이전 차트 제거
+                trendChartCanvas.style.display = 'none';
+            }
+            errorMessageDiv.style.display = 'none';
+            loadingIndicator.style.display = 'block'; // 로딩 시작
+            analyzeButton.disabled = true; // 버튼 비활성화
+
+            // --- 실제 API 호출 로직 대신 시뮬레이션 ---
+            // 실제 구현 시:
+            // 1. 입력된 keywords를 서버로 전송합니다.
+            // 2. 서버에서는 네이버 API를 호출하여 데이터를 받아옵니다.
+            // 3. 서버는 가공된 데이터를 클라이언트(현재 페이지)로 응답합니다.
+            // 4. 클라이언트는 받은 데이터로 아래 displayResults 함수를 호출합니다.
+            console.log(`서버로 전송할 키워드: ${keywords}`);
+
+            // 가상 API 호출 지연 (2초)
+            setTimeout(() => {
+                try {
+                    // 가상 데이터 생성 (실제로는 서버 응답 사용)
+                    const mockData = generateMockData(keywords.split(',').map(k => k.trim()));
+
+                    displayResults(mockData);
+                    loadingIndicator.style.display = 'none'; // 로딩 완료
+                    analyzeButton.disabled = false; // 버튼 활성화
+
+                } catch (error) {
+                    console.error("분석 중 오류 발생:", error);
+                    showError("데이터 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+                    loadingIndicator.style.display = 'none'; // 로딩 완료 (오류)
+                    analyzeButton.disabled = false; // 버튼 활성화
+                }
+            }, 2000);
+            // --- 시뮬레이션 종료 ---
+        });
+
+        // 가상 데이터 생성 함수 (실제로는 서버 응답 사용)
+        function generateMockData(keywordList) {
+            const labels = ['2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06']; // 예시 기간
+            const datasets = keywordList.map((keyword, index) => {
+                const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6']; // 예시 색상
+                return {
+                    label: keyword,
+                    data: labels.map(() => Math.floor(Math.random() * 100)), // 0~99 랜덤 데이터
+                    borderColor: colors[index % colors.length],
+                    tension: 0.1,
+                    fill: false
+                };
+            });
+
+            return {
+                labels: labels,
+                datasets: datasets
+            };
+        }
+
+        // 결과 표시 함수
+        function displayResults(data) {
+            resultsDiv.style.display = 'block'; // 결과 영역 표시
+            trendChartCanvas.style.display = 'block'; // 차트 캔버스 표시
+
+            // Chart.js를 사용하여 라인 차트 생성
+            const ctx = trendChartCanvas.getContext('2d');
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: '키워드별 트렌드 변화 (가상 데이터)'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '상대적 관심도'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 오류 메시지 표시 함수
+        function showError(message) {
+            errorMessageDiv.textContent = message;
+            errorMessageDiv.style.display = 'block';
+            loadingIndicator.style.display = 'none'; // 오류 시 로딩 숨김
+            analyzeButton.disabled = false; // 오류 시 버튼 활성화
+        }
+    </script>
+
+</body>
+</html>
