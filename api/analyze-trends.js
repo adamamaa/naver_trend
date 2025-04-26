@@ -1,204 +1,118 @@
-# api/index.py (Vercel Serverless Function 파일 이름 예시)
-from flask import Flask, request, jsonify
-import requests
-import os
-# import random # 임의의 검색량 생성을 위해 임포트 (이제 DataLab 연동 시에는 사용하지 않음)
-from flask_cors import CORS # CORS 설정을 위해 임포트 (프론트엔드와 백엔드가 다른 포트에서 실행될 경우 필요)
-# 로컬 개발 시 .env 파일에서 환경 변수를 로드하기 위해 필요 (Vercel에서는 자동 로드)
-from dotenv import load_dotenv
-from datetime import datetime, timedelta # 현재 날짜 계산을 위해 임포트
-import json # JSON 데이터 처리를 위해 임포트
-import sys # 오류 로깅을 위해 sys 모듈 임포트
+// 파일 경로: /api/analyze-trends.js
+// Vercel Serverless Function으로 동작하는 Node.js 코드입니다.
 
-# 로컬 개발 환경에서 .env 파일 로드
-# Vercel 배포 환경에서는 이 코드가 실행되지 않습니다.
-load_dotenv()
+export default async function handler(req, res) {
+    // POST 요청만 처리합니다.
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', ['POST']);
+        return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+    }
 
-# Flask 앱 생성
-app = Flask(__name__)
-# 프론트엔드와 백엔드가 다른 포트에서 실행될 경우 CORS 허용
-# 실제 운영 환경에서는 특정 도메인만 허용하도록 설정하는 것이 안전합니다.
-CORS(app)
+    try {
+        // 프론트엔드에서 전송한 데이터 추출 (startDate, endDate 추가)
+        const { keywords, timeUnit, startDate, endDate } = req.body;
 
-# 네이버 API 정보 (Vercel 환경 변수 또는 로컬 .env 파일에서 불러옴)
-# Vercel 프로젝트 설정에서 환경 변수(NAVER_CLIENT_ID, NAVER_CLIENT_SECRET)를 추가하세요.
-# 또는 로컬 개발 시 프로젝트 루트에 .env 파일을 만들고 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 값을 설정하세요.
-NAVER_CLIENT_ID = os.environ.get('NAVER_CLIENT_ID')
-NAVER_CLIENT_SECRET = os.environ.get('NAVER_CLIENT_SECRET')
+        // --- 입력값 유효성 검사 ---
+        // 키워드 유효성 검사
+        if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+            return res.status(400).json({ error: 'Keywords are required and must be a non-empty array.' });
+        }
 
-# 네이버 블로그 검색 API 엔드포인트
-NAVER_BLOG_SEARCH_URL = "https://openapi.naver.com/v1/search/blog.json"
+        // 시간 단위 유효성 검사 ('week' 추가)
+        const validTimeUnits = ['date', 'week', 'month', 'year'];
+        // 유효하지 않은 값이 오면 'date'를 기본값으로 사용합니다.
+        const validatedTimeUnit = validTimeUnits.includes(timeUnit) ? timeUnit : 'date';
 
-# 네이버 데이터랩 통합 검색어 트렌드 API 엔드포인트
-NAVER_DATALAB_SEARCH_URL = "https://openapi.naver.com/v1/datalab/search"
+        // 날짜 유효성 검사 함수
+        const isValidDate = (dateString) => {
+            // yyyy-mm-dd 형식 확인 (정규식 사용)
+            const regex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!regex.test(dateString)) return false;
+            // 실제 유효한 날짜인지 확인 (Date 객체 활용)
+            const date = new Date(dateString);
+            // NaN이면 유효하지 않은 날짜입니다.
+            if (isNaN(date.getTime())) return false;
+            // 네이버 API 최소 날짜 확인 (2016-01-01)
+            if (date < new Date("2016-01-01")) return false;
+            // 모든 검사를 통과하면 유효한 날짜입니다.
+            return true;
+        };
 
-def get_naver_search_volume(keyword):
-    """
-    네이버 데이터랩 통합 검색어 트렌드 API를 사용하여 검색량 지표를 가져오는 함수.
-    API는 상대적인 검색량 비율을 반환합니다. 여기서는 최근 월의 비율을 반환합니다.
-    """
-    # print(f"네이버 데이터랩 API로 '{keyword}'의 검색량 지표 가져오기 시도") # Removed print
+        // 시작일, 종료일 유효성 검사
+        if (!startDate || !endDate || !isValidDate(startDate) || !isValidDate(endDate)) {
+            return res.status(400).json({ error: 'startDate and endDate are required in yyyy-mm-dd format (after 2016-01-01).' });
+        }
 
-    # 네이버 데이터랩 API 호출을 위한 헤더 설정
-    headers = {
-        'X-Naver-Client-Id': NAVER_CLIENT_ID,
-        'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
-        'Content-Type': 'application/json' # DataLab API는 JSON 본문 전송
-    }
-
-    # 조회 기간 설정 (예: 최근 3개월)
-    end_date = datetime.now()
-    # DataLab API는 조회 시작일을 2016년 1월 1일부터 지원
-    # 검색량 지표는 최소 1개월 단위로 조회하는 것이 일반적입니다.
-    # 최근 3개월 데이터를 조회하여 마지막 월의 비율을 사용합니다.
-    start_date = end_date - timedelta(days=90) # 최근 90일 (약 3개월)
-    # DataLab API는 startDate를YYYY-MM-DD 형식으로 요구
-    start_date_str = start_date.strftime("%Y-%m-%d")
-    end_date_str = end_date.strftime("%Y-%m-%d")
+        // 시작일이 종료일보다 늦지 않은지 확인
+        if (new Date(startDate) > new Date(endDate)) {
+            return res.status(400).json({ error: 'startDate cannot be after endDate.' });
+        }
+        // --- 유효성 검사 끝 ---
 
 
-    # DataLab API 요청 본문 (Payload)
-    # 통합 검색어 트렌드 API 문서에 따라 JSON 구조를 만듭니다.
-    body = {
-        "startDate": start_date_str, # 조회 기간 시작 날짜
-        "endDate": end_date_str,     # 조회 기간 종료 날짜
-        "timeUnit": "month",       # 시간 단위: 월간
-        "keywordGroups": [
-            {
-                "groupName": keyword, # 그룹 이름 (키워드 자체 사용)
-                "keywords": [keyword] # 분석할 키워드 목록
-            }
-        ],
-        # device, gender, ages 등 필터링이 필요하면 여기에 추가
-        # "device": "pc",
-        # "gender": "m",
-        # "ages": ["10", "20"]
-    }
+        // Vercel 환경 변수에서 네이버 API 키 가져오기
+        const clientId = process.env.NAVER_CLIENT_ID;
+        const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
-    try:
-        # 네이버 데이터랩 API 호출 (POST 방식)
-        # 요청 본문을 JSON 문자열로 변환하여 전송합니다.
-        response = requests.post(NAVER_DATALAB_SEARCH_URL, headers=headers, data=json.dumps(body))
-        response.raise_for_status() # HTTP 에러 발생 시 예외 throw
+        // 환경 변수가 설정되지 않았으면 서버 오류 반환
+        if (!clientId || !clientSecret) {
+            console.error('Naver API environment variables not set.');
+            return res.status(500).json({ error: 'Server configuration error: API keys missing.' });
+        }
 
-        # API 응답(JSON) 파싱
-        datalab_data = response.json()
+        // 네이버 데이터랩 API URL
+        const naverApiUrl = 'https://openapi.naver.com/v1/datalab/search';
 
-        # DataLab API 응답에서 검색량 지표 추출
-        # 응답 구조: { "results": [ { "title": "...", "keywords": [...], "data": [ {"period": "...", "ratio": ...}, ... ] } ] }
-        # keywordGroups에 키워드 하나만 넣었으므로 results[0]에 해당 키워드 데이터가 있습니다.
-        # data 배열의 마지막 요소가 가장 최근 기간의 데이터입니다.
-        search_ratio = 0.0 # 기본값 0
+        // 네이버 API 요청 본문 생성 (프론트엔드에서 받은 값 사용)
+        const requestBody = {
+            startDate: startDate,         // 프론트엔드에서 받은 시작일
+            endDate: endDate,           // 프론트엔드에서 받은 종료일
+            timeUnit: validatedTimeUnit,  // 유효성 검사를 거친 시간 단위
+            keywordGroups: keywords.map(kw => ({ // 각 키워드를 그룹으로 매핑
+                groupName: kw,
+                keywords: [kw]
+            }))
+            // device, gender, ages 등 다른 파라미터도 필요시 여기에 추가 가능
+        };
 
-        if datalab_data and 'results' in datalab_data and len(datalab_data['results']) > 0:
-            keyword_result = datalab_data['results'][0]
-            if 'data' in keyword_result and len(keyword_result['data']) > 0:
-                # data 배열의 마지막 요소 (가장 최근 기간)의 ratio 값을 가져옵니다.
-                latest_data = keyword_result['data'][-1]
-                search_ratio = latest_data.get('ratio', 0.0)
-                # ratio 값은 float 형태입니다.
+        // 네이버 API 호출 (Node.js 내장 fetch 사용)
+        const apiResponse = await fetch(naverApiUrl, {
+            method: 'POST',
+            headers: {
+                'X-Naver-Client-Id': clientId,       // 네이버 클라이언트 ID 헤더
+                'X-Naver-Client-Secret': clientSecret, // 네이버 클라이언트 시크릿 헤더
+                'Content-Type': 'application/json'  // 요청 본문 타입 지정
+            },
+            body: JSON.stringify(requestBody) // 요청 본문을 JSON 문자열로 변환
+        });
 
-        # print(f"'{keyword}'의 최근 월 검색량 지표 (ratio): {search_ratio}", file=sys.stderr) # Changed to sys.stderr
-        return search_ratio # 최근 월의 상대적 검색량 비율 반환
+        // 네이버 API 응답 상태 확인 및 처리
+        if (!apiResponse.ok) {
+            let errorData;
+            try {
+                // 오류 응답 본문을 JSON으로 파싱 시도
+                errorData = await apiResponse.json();
+                console.error("Naver API Error Response:", errorData);
+            } catch (e) {
+                // JSON 파싱 실패 시 상태 텍스트 로깅
+                console.error("Failed to parse Naver API error response:", apiResponse.statusText);
+            }
+            // 네이버에서 받은 오류 메시지 또는 상태 텍스트 사용
+            const errorMessage = errorData?.errorMessage || apiResponse.statusText;
+            const errorCode = errorData?.errorCode || apiResponse.status;
+            // 네이버 API 오류를 클라이언트에게 좀 더 상세히 전달
+             return res.status(apiResponse.status).json({ error: `네이버 API 오류: ${errorMessage} (코드: ${errorCode})` });
+        }
 
-    except requests.exceptions.RequestException as e:
-        # print(f"네이버 데이터랩 API 호출 오류: {e}", file=sys.stderr) # Changed to sys.stderr
-        # 오류 발생 시 0을 반환합니다.
-        return 0.0
-    except Exception as e:
-        # print(f"DataLab 응답 처리 중 오류: {e}", file=sys.stderr) # Changed to sys.stderr
-        return 0.0
+        // 네이버 API 성공 응답 파싱
+        const data = await apiResponse.json();
+        // 성공 응답(200)과 함께 데이터를 프론트엔드로 전달
+        res.status(200).json(data);
 
-
-# Vercel Serverless Function으로 동작할 엔드포인트 정의
-@app.route('/api/analyze-keyword', methods=['POST'])
-def analyze_keyword():
-    """
-    프론트엔드로부터 키워드를 받아 네이버 블로그 발행량과 검색량 지표를 조회하고
-    비율을 계산하여 반환하는 API 엔드포인트
-    """
-    # 네이버 API 키가 설정되지 않았는지 확인
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-         # print('네이버 API 클라이언트 ID 또는 Secret이 설정되지 않았습니다.', file=sys.stderr) # Changed to sys.stderr
-         # API 키 누락 시 더 명확한 JSON 에러 반환
-         return jsonify({'error': 'Server configuration error: Naver API keys are not set. Please check Vercel Environment Variables.'}), 500
-
-    # POST 요청의 JSON 본문에서 키워드 추출
-    data = request.get_json()
-    keyword = data.get('keyword')
-
-    # 키워드가 없으면 에러 응답 반환
-    if not keyword:
-        return jsonify({'error': '키워드를 입력해주세요.'}), 400
-
-    blog_count = 0
-    search_volume_ratio = 0.0 # 검색량은 이제 상대적 비율 값입니다.
-    ratio = 0.0
-
-    try:
-        # --- 1. 네이버 블로그 검색 API 호출 (발행량) ---
-        headers = {
-            'X-Naver-Client-Id': NAVER_CLIENT_ID,
-            'X-Naver-Client-Secret': NAVER_CLIENT_SECRET
-        }
-        params = {
-            'query': keyword, # 검색할 키워드
-            'display': 1,     # 검색 결과 개수 (total 값만 필요하므로 1개만 요청)
-            'start': 1        # 검색 시작 위치 (total 값에 영향 없음)
-        }
-        response = requests.get(NAVER_BLOG_SEARCH_URL, headers=headers, params=params)
-        response.raise_for_status() # HTTP 에러 발생 시 예외 throw
-
-        # API 응답(JSON) 파싱
-        naver_data = response.json()
-
-        # 블로그 발행량 (total 필드) 추출
-        blog_count = naver_data.get('total', 0) # total 필드가 없으면 0으로 기본값 설정
-
-        # --- 2. 검색량 지표 가져오기 (DataLab API 연동) ---
-        # get_naver_search_volume 함수 내부에서 DataLab API를 호출합니다.
-        search_volume_ratio = get_naver_search_volume(keyword) # 이제 상대적 비율 값 반환
-
-        # --- 3. 비율 계산 ---
-        # '검색량 지표 / 블로그 글 수' 비율 계산
-        if blog_count > 0:
-            ratio = search_volume_ratio / blog_count
-            # 소수점 넷째 자리까지 표시하도록 반올림 (비율이 작을 수 있으므로)
-            ratio = round(ratio, 4)
-        else:
-            # 블로그 글 수가 0이면 비율은 0으로 처리
-            ratio = 0.0
-
-        # --- 4. 프론트엔드로 보낼 결과 데이터 구성 ---
-        result = {
-            'keyword': keyword,
-            'blogCount': blog_count,
-            'searchVolume': search_volume_ratio, # 이제 상대적 검색량 비율 값
-            'ratio': ratio
-        }
-
-        # 결과를 JSON 형태로 프론트엔드에 반환
-        return jsonify(result)
-
-    except requests.exceptions.RequestException as e:
-        # API 호출 중 네트워크 또는 HTTP 에러 발생 시 (블로그 API 또는 DataLab API)
-        # print(f"API 호출 오류: {e}", file=sys.stderr) # Changed to sys.stderr
-        # 클라이언트에게 더 자세한 에러 메시지 전달
-        return jsonify({'error': f'API 호출 중 오류가 발생했습니다: {e}'}), 500
-    except Exception as e:
-        # 그 외 예외 발생 시
-        # print(f"백엔드 처리 중 오류: {e}", file=sys.stderr) # Changed to sys.stderr
-        # 클라이언트에게 더 자세한 에러 메시지 전달
-        return jsonify({'error': f'서버 내부 오류가 발생했습니다: {e}'}), 500
-
-# Vercel Serverless Function으로 Flask 앱을 래핑
-# Vercel 환경에서 실행될 때 이 부분이 사용됩니다.
-# 로컬에서 일반 Flask 앱처럼 실행하려면 if __name__ == '__main__': 블록을 사용합니다.
-vercel_app = Vercel(app)
-
-# 로컬 개발용 실행 (선택 사항)
-# Vercel 배포 시에는 이 블록은 실행되지 않습니다.
-if __name__ == '__main__':
-    # debug=True는 개발 중에만 사용하세요.
-    # 로컬에서 실행 시 필요한 환경 변수를 .env 파일 등에 설정하고 python-dotenv 등으로 로드할 수 있습니다.
-    app.run(debug=True, host='0.0.0.0', port=5000) # 예시로 5000번 포트 사용
+    } catch (error) {
+        // 백엔드 함수 내부의 예외 처리
+        console.error("Error in /api/analyze-trends:", error);
+        // 일반적인 서버 오류 메시지를 클라이언트에게 전달
+        res.status(500).json({ error: `데이터 분석 중 서버 오류 발생: ${error.message}` });
+    }
+}
